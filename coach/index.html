@@ -1,4 +1,15 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style></head><body>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Central de trabalho do coach Jesley Slayter: alunos, avaliações, treinos, dieta, relatórios e finanças.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JS Coach">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html,body{overscroll-behavior-y:none}</style>
+</head><body>
 <title>Jesley Slayter Coach</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#05040d">
@@ -327,7 +338,7 @@ ul.clean{margin:0;padding-left:18px}
 <div id="toastRoot"></div>
 <input type="file" id="importFile" accept="application/json,.json" hidden>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="jspdf.umd.min.js"></script>
 <script>
 (function(){
 'use strict';
@@ -640,7 +651,7 @@ function syncText() {
   if (SY.cloud && SY.cloudState === 'ok') return 'Tudo salvo na nuvem do aplicativo, com cópia no aparelho.';
   if (SY.cloud && SY.cloudState === 'connecting') return 'Conectando à nuvem. Seus dados estão salvos no aparelho.';
   if (SY.cloudState === 'error') return 'A nuvem não respondeu. Seus dados estão salvos no aparelho.';
-  return 'Salvo no aparelho. Abra o app pelo link do Claude para salvar também na nuvem.';
+  return window.claude ? 'Salvo no aparelho.' : 'Tudo salvo neste aparelho, inclusive sem internet. Exporte a cópia de segurança de vez em quando para não perder nada.';
 }
 function updSync() {
   if (SY.timer) return setSync('busy');
@@ -749,12 +760,25 @@ async function saveFile(filename, blob) {
     }
     return;
   }
-  try {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click();
-    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
-    toast('Arquivo pronto: ' + filename);
-  } catch (e) { toast('Não foi possível baixar o arquivo neste navegador.'); }
+  shareSheet(filename, blob);
+}
+/* Fora do Claude (app instalado no iPhone): compartilhar ou baixar com um toque novo */
+function shareSheet(filename, blob) {
+  const file = (() => { try { return new File([blob], filename, {type: blob.type || 'application/octet-stream'}); } catch (e) { return null; } })();
+  const canShare = !!(file && navigator.canShare && navigator.canShare({files: [file]}));
+  sheet('Arquivo pronto', '<p class="muted" style="margin-bottom:14px">' + esc(filename) + '</p><div class="stack" style="gap:10px">' +
+    (canShare ? '<button class="btn p block" id="shGo">📤 Compartilhar (WhatsApp, Arquivos…)</button>' : '') +
+    '<button class="btn block' + (canShare ? '' : ' p') + '" id="shDl">⬇ Baixar</button></div>' +
+    (canShare ? '<p class="note" style="margin-top:10px">No iPhone, use "Compartilhar" e escolha WhatsApp para enviar ao aluno ou "Salvar em Arquivos".</p>' : ''));
+  if (canShare) $('#shGo').onclick = () => { navigator.share({files: [file], title: filename}).then(() => closeSheet()).catch(e => { if (e && e.name !== 'AbortError') toast('Não foi possível compartilhar. Tente "Baixar".'); }); };
+  $('#shDl').onclick = () => {
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60000);
+      closeSheet();
+    } catch (e) { toast('Não foi possível baixar o arquivo neste navegador.'); }
+  };
 }
 
 /* ═════════ Modelo do aluno ═════════ */
@@ -1178,6 +1202,7 @@ function vCarteira() {
     '<button class="btn p block" data-act="novo">＋ Novo aluno</button>' +
     '<div class="list" id="stList">' + (list.length ? list.map(stCard).join('') : (all.length ? '<div class="card flat empty">Nenhum aluno encontrado com esse filtro.</div>' :
       '<div class="card empty"><div class="big">🏋️</div><h3>Sua carteira está vazia</h3><p class="small muted" style="margin:6px 0 14px">Cadastre o primeiro aluno para começar. Ou veja o app funcionando com três alunos de exemplo, que você pode excluir depois.</p><button class="btn sm" data-act="demo">Carregar alunos de exemplo</button></div>')) + '</div>' +
+    (!window.claude && all.length && (!S.config.ultimaCopia || Date.now() - S.config.ultimaCopia > 7 * 864e5) ? '<div class="warnbox">Seus dados ficam guardados neste aparelho. Faz mais de 7 dias sem cópia de segurança: exporte uma e guarde no app Arquivos ou no iCloud.</div>' : '') +
     '<div class="card flat"><div class="card-h"><h3>Cópia de segurança</h3><span class="tiny dim">' + (S.config.ultimaCopia ? 'Última: ' + new Date(S.config.ultimaCopia).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'}) : 'Nenhuma exportada') + '</span></div>' +
     '<p class="small muted" style="margin-bottom:12px">Guarde um arquivo com todos os alunos, avaliações, treinos, dietas e fotos.</p><div class="btns"><button class="btn sm grow" data-act="export">⬇ Exportar JSON</button><button class="btn sm grow" data-act="import">⬆ Importar JSON</button></div></div>' +
     '</div>';
@@ -2499,6 +2524,10 @@ const Music = (() => {
   S.animate = true; render();
   updSync();
   connectCloud();
+  if (!window.claude) {
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
 })();
 })();
 </script>
